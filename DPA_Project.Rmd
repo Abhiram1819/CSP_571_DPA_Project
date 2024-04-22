@@ -1,0 +1,514 @@
+---
+title: "CSP 571 Data Preparation and Analysis Project"
+author: "Abhiram Ravipati, Sumanth Kalyan Bandigupthapu"
+date: "`r Sys.Date()`"
+output: word_document
+---
+
+```{r}
+library(dplyr)
+library(ggplot2)
+library(tidyr)
+library(corrplot)
+```
+
+```{r}
+realtor_data <- read.csv("C:/Users/Abhiram/Desktop/DPA Project/realtor-data.csv")
+```
+
+```{r}
+head(realtor_data)
+```
+
+```{r}
+str(realtor_data)
+```
+
+```{r}
+summary(realtor_data)
+```
+
+```{r}
+realtor_data <- realtor_data %>% select(-prev_sold_date) 
+
+str(realtor_data)
+```
+```{r}
+distinct_realtor_data <- realtor_data %>% distinct()
+
+dim(distinct_realtor_data)
+```
+```{r}
+realtor_data[realtor_data == ""] <- NA
+```
+
+```{r}
+library(reshape2)
+null_counts <- realtor_data %>% summarise_all(~ sum(is.na(.)))
+
+null_counts_long <- melt(null_counts)
+
+ggplot(data = null_counts_long, aes(x = variable, y = value)) +
+  geom_bar(stat = "identity", fill = "skyblue", color = "black") +
+  labs(title = "Null Values in Each Column",
+       x = "Columns") +
+  theme(axis.text.x = element_text(angle = 90, hjust = 1, vjust = 0.5),
+        axis.text = element_text(size = 8)) +  
+  ylab("Null Count") +  
+  scale_y_continuous(labels = function(x) format(x, scientific = FALSE))  
+```
+
+```{r}
+realtor_data <- na.omit(realtor_data)
+
+print(dim(realtor_data))
+```
+```{r}
+na_count_by_column <- sapply(realtor_data, function(x) sum(is.na(x)))
+print(na_count_by_column)
+```
+
+```{r}
+ggplot(realtor_data, aes(y = price)) +
+  geom_boxplot() +
+  ggtitle("Boxplot of Prices Before Removing Outliers") +
+  scale_y_continuous(labels = function(x) format(x, scientific = FALSE))
+```
+
+```{r}
+stats <- realtor_data %>%
+  summarise(
+    Q1 = quantile(price, 0.25, na.rm = TRUE),  
+    Q3 = quantile(price, 0.75, na.rm = TRUE)   
+  ) %>%
+  mutate(
+    IQR = Q3 - Q1,
+    lower_bound = Q1 - 1.5 * IQR,
+    upper_bound = Q3 + 1.5 * IQR
+  )
+
+realtor_data <- realtor_data %>%
+  filter(price >= stats$lower_bound & price <= stats$upper_bound)
+```
+
+```{r}
+ggplot(realtor_data, aes(y = price)) +
+  geom_boxplot() +
+  ggtitle("Boxplot of Prices After Removing Outliers") +
+  scale_y_continuous(labels = function(x) format(x, scientific = FALSE))
+```
+```{r}
+avg_bedrooms_per_state <- realtor_data %>%
+  group_by(state) %>%
+  summarise(avg_bedrooms = mean(bed, na.rm = TRUE))
+
+ggplot(avg_bedrooms_per_state, aes(x = state, y = avg_bedrooms)) +
+  geom_bar(stat = "identity", fill = "skyblue", color = "black") +  
+  labs(title = "Average Number of Bedrooms by State",
+       x = "State",
+       y = "Average Number of Bedrooms") +
+  theme(axis.text.x = element_text(angle = 90, hjust = 1))
+```
+```{r}
+avg_bathrooms_per_state <- realtor_data %>%
+  group_by(state) %>%
+  summarise(avg_bathrooms = mean(bath, na.rm = TRUE))
+
+ggplot(avg_bathrooms_per_state, aes(x = state, y = avg_bathrooms)) +
+  geom_bar(stat = "identity", fill = "skyblue", color = "black") +  
+  labs(title = "Average Number of Bathrooms by State",
+       x = "State",
+       y = "Average Number of Bathrooms") +
+  theme(axis.text.x = element_text(angle = 90, hjust = 1))
+
+```
+```{r}
+realtor_data_bed_bath <- realtor_data %>%
+  mutate(rooms = bed + bath)
+
+avg_rooms_per_state <- realtor_data_bed_bath %>%
+  group_by(state) %>%
+  summarise(avg_rooms = mean(rooms, na.rm = TRUE))
+
+ggplot(avg_rooms_per_state, aes(x = factor(state), y = avg_rooms)) +
+  geom_bar(stat = "identity", fill = "skyblue", color = "black") +
+  labs(title = "Average Number of Rooms by State",
+       x = "State",
+       y = "Average Number of Rooms") +
+  theme(axis.text.x = element_text(angle = 90, hjust = 1))
+```
+```{r}
+realtor_data <- realtor_data %>%
+  mutate(price_per_sqft = price / house_size)
+
+average_price_per_sqft_by_city <- realtor_data %>%
+  group_by(city) %>%
+  summarise(average_price_per_sqft = mean(price_per_sqft, na.rm = TRUE), .groups = 'drop')  
+
+top_10_cities <- average_price_per_sqft_by_city %>%
+  arrange(desc(average_price_per_sqft)) %>%
+  slice_head(n = 20)
+
+ggplot(top_10_cities, aes(x = reorder(city, average_price_per_sqft), y = average_price_per_sqft, fill = city)) +
+  geom_col(color = "black", fill = "skyblue") +  
+  labs(title = "Top 20 Cities by Average Price per Square Foot",
+       x = "City",
+       y = "Average Price per Square Foot") +
+  theme_minimal() +
+  theme(axis.text.x = element_text(angle = 90, hjust = 1),
+        axis.text.y = element_blank())  
+```
+```{r}
+# Plot the realtor data
+ggplot(realtor_data, aes(x = house_size, y = price)) +
+  geom_point(alpha = 0.5) +
+  geom_smooth(method = "lm", color = "red") +  
+  labs(title = "Price vs. House Size", x = "House Size (sq ft)", y = "Price") +
+  theme_minimal() +
+  scale_y_continuous(labels = scales::comma) +
+  scale_x_continuous(labels = scales::comma)
+
+```
+
+
+```{r}
+df_for_sale <- subset(realtor_data, status == 'for_sale')
+
+bed_count_for_sale <- table(df_for_sale$bed)
+
+ggplot(df_for_sale, aes(x = factor(bed))) + 
+  geom_bar(fill = 'skyblue', colour = 'black') +
+  labs(title = "No. of for_Sale Listings by Number of Bedrooms",
+       x = "Number of Bedrooms", y = "Count of Listings") +
+  theme_minimal() +
+  theme(axis.text.x = element_text(angle = 90, hjust = 1)) +
+  scale_y_continuous(labels = scales::comma)
+```
+```{r}
+df_for_sale <- subset(realtor_data, status == 'for_sale')
+
+bath_count_for_sale <- table(df_for_sale$bath)
+
+ggplot(df_for_sale, aes(x = factor(bath))) + 
+  geom_bar(fill = 'skyblue', colour = 'black') +
+  labs(title = "No. of for_sale Listings by Number of Bathrooms",
+       x = "Number of Bathrooms", y = "Count of Listings") +
+  theme_minimal() +
+  theme(axis.text.x = element_text(angle = 90, hjust = 1)) +
+  scale_y_continuous(labels = function(x) format(x, scientific = FALSE))
+
+```
+```{r}
+realtor_data$bed <- as.numeric(as.character(realtor_data$bed))
+
+numeric_data <- realtor_data[, c("price", "bed", "bath", "acre_lot", "zip_code","house_size")]
+
+correlation_matrix <- cor(numeric_data, use="complete.obs") 
+
+
+corrplot(correlation_matrix, method="color", type="upper", 
+         addCoef.col="black", tl.col="black", tl.srt=45)
+```
+```{r}
+status_counts <- table(realtor_data$status)
+
+status_df <- as.data.frame(status_counts)
+
+colnames(status_df) <- c("Status", "Count")
+
+status_df <- transform(status_df, Percentage = round(Count / sum(Count) * 100, 1))
+
+ggplot(status_df, aes(x = "", y = Count, fill = Status)) +
+  geom_bar(stat = "identity", width = 1) +
+  coord_polar("y", start = 0) +
+  geom_text(aes(label = paste0(Percentage, "%")), position = position_stack(vjust = 0.5)) +
+  labs(title = "Distribution of Status Column",
+       fill = "Status") +
+  theme_void() +
+  theme(legend.position = "bottom")
+```
+```{r}
+city_avg_size <- realtor_data %>%
+  group_by(city) %>%
+  summarise(avg_house_size = mean(house_size, na.rm = TRUE)) %>%
+  arrange(desc(avg_house_size)) %>%
+  top_n(10)
+
+# Plot the average house size by city
+ggplot(city_avg_size, aes(x = reorder(city, avg_house_size), y = avg_house_size)) +
+  geom_point(color = "skyblue", size = 3) +
+  geom_line(aes(group = 1), color = "skyblue") +
+  labs(title = "Top 10 Cities by Average House Size",
+       x = "City",
+       y = "Average House Size") +
+  theme_minimal() +
+  theme(axis.text.x = element_text(angle = 90, hjust = 1)) +
+  scale_y_continuous(labels = scales::comma)
+
+```
+
+```{r}
+state_avg_size <- realtor_data %>%
+  group_by(state) %>%
+  summarise(avg_house_size = mean(house_size, na.rm = TRUE)) %>%
+  arrange(desc(avg_house_size))
+
+ggplot(state_avg_size, aes(x = state, y = avg_house_size)) +
+  geom_point(color = "skyblue", size = 3) +
+  geom_line(aes(group = 1), color = "skyblue") + 
+  labs(title = "Average House Size by State",
+       x = "State",
+       y = "Average House Size") +
+  theme_minimal() +
+  theme(axis.text.x = element_text(angle = 90, hjust = 1))  
+```
+
+
+```{r}
+avg_price_per_state <- realtor_data %>%
+  group_by(state) %>%
+  summarise(avg_price = mean(price, na.rm = TRUE))
+
+ggplot(avg_price_per_state, aes(x = state, y = avg_price)) +
+  geom_bar(stat = "identity", fill = "skyblue", colour = "black") +
+  labs(title = "Average Sale Price by State",
+       x = "State",
+       y = "Average Sale Price") +
+  scale_y_continuous(labels = scales::comma) +  
+  theme(axis.text.x = element_text(angle = 90, hjust = 1))
+
+```
+```{r}
+avg_price_per_city <- realtor_data %>%
+  group_by(city) %>%
+  summarise(avg_price = mean(price, na.rm = TRUE)) %>%
+  arrange(desc(avg_price)) %>%
+  top_n(30)
+
+ggplot(avg_price_per_city, aes(x = reorder(city, avg_price), y = avg_price)) +
+  geom_bar(stat = "identity", fill = "skyblue", colour = "black") +
+  labs(title = "Average Sale Price for Top 30 Cities",
+       x = "City",
+       y = "Average Sale Price") +
+  scale_y_continuous(labels = scales::comma) +
+  theme(axis.text.x = element_text(angle = 90, hjust = 1))
+```
+```{r}
+avg_acre_lot_per_state <- realtor_data %>%
+  group_by(state) %>%
+  summarise(avg_acre_lot = mean(acre_lot, na.rm = TRUE))
+
+ggplot(avg_acre_lot_per_state, aes(x = state, y = avg_acre_lot)) +
+  geom_bar(stat = "identity", fill = "skyblue", colour = "black") +
+  labs(title = "Average Acre Lot by State",
+       x = "State",
+       y = "Average Acre Lot") +
+  theme(axis.text.x = element_text(angle = 90, hjust = 1))
+```
+```{r}
+avg_acre_lot_per_city <- realtor_data %>%
+  group_by(city) %>%
+  summarise(avg_acre_lot = mean(acre_lot, na.rm = TRUE)) %>%
+  arrange(desc(avg_acre_lot)) %>%
+  top_n(30)
+
+ggplot(avg_acre_lot_per_city, aes(x = reorder(city, avg_acre_lot), y = avg_acre_lot)) +
+  geom_bar(stat = "identity", fill = "skyblue", colour = "black") + 
+  labs(title = "Average Acre Lot for Top 30 Cities",
+       x = "City",
+       y = "Average Acre Lot") +
+  theme(axis.text.x = element_text(angle = 90, hjust = 1))
+
+```
+```{r}
+library(scales)
+ggplot(realtor_data, aes(x = acre_lot, y = price)) +
+  geom_point() +
+  labs(title = "Selling Price vs Acre Area",
+       x = "Acre Area",
+       y = "Selling Price") +
+  theme_minimal() +
+  scale_y_continuous(labels = comma)
+```
+```{r}
+illinois_data <- realtor_data %>%
+  filter(state == "Illinois")
+
+average_price_by_city_illinois <- illinois_data %>%
+  group_by(city) %>%
+  summarise(average_price = mean(price, na.rm = TRUE)) %>%
+  arrange(desc(average_price)) %>%
+  top_n(10)
+
+ggplot(average_price_by_city_illinois, aes(x = reorder(city, -average_price), y = average_price)) +
+  geom_col(fill = "skyblue", color = "black") +
+  labs(title = "Avg. House Prices by City in Illinois (Top 10)",
+       x = "City",
+       y = "Average Price") +
+  scale_y_continuous(labels = scales::comma) +
+  theme_minimal() +
+  theme(axis.text.x = element_text(angle = 90, hjust = 1))
+```
+```{r}
+new_york_data <- realtor_data %>%
+  filter(state == "New York")
+
+average_price_by_city_newyork <- new_york_data %>%
+  group_by(city) %>%
+  summarise(average_price = mean(price, na.rm = TRUE)) %>%
+  arrange(desc(average_price)) %>%
+  top_n(10)
+
+ggplot(average_price_by_city_newyork, aes(x = reorder(city, -average_price), y = average_price)) +
+  geom_col(fill = "skyblue", color = "black") +
+  labs(title = "Avg. House Prices by City in New York (Top 10)",
+       x = "City",
+       y = "Average Price") +
+  scale_y_continuous(labels = scales::comma) +  
+  theme_minimal() +
+  theme(axis.text.x = element_text(angle = 90, hjust = 1))
+```
+```{r}
+library(dplyr)
+library(ggplot2)
+
+california_data <- realtor_data %>%
+  filter(state == "California")
+
+average_price_by_city_california <- california_data %>%
+  group_by(city) %>%
+  summarise(average_price = mean(price, na.rm = TRUE)) %>%
+  arrange(desc(average_price)) %>%
+  top_n(10)
+
+ggplot(average_price_by_city_california, aes(x = reorder(city, -average_price), y = average_price)) +
+  geom_col(fill = "skyblue", color = "black") +
+  labs(title = "Avg. House Prices by City in California (Top 10)",
+       x = "City",
+       y = "Average Price") +
+  scale_y_continuous(labels = scales::comma) +
+  theme_minimal() +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1))
+```
+
+```{r}
+texas_data <- realtor_data %>%
+  filter(state == "Texas")
+
+average_price_by_city_texas <- texas_data %>%
+  group_by(city) %>%
+  summarise(average_price = mean(price, na.rm = TRUE)) %>%
+  arrange(desc(average_price)) %>%
+  top_n(10)
+
+ggplot(average_price_by_city_texas, aes(x = reorder(city, -average_price), y = average_price)) +
+  geom_col(fill = "skyblue", color = "black") +
+  labs(title = "Avg. House Prices by City in Texas (Top 10)",
+       x = "City",
+       y = "Average Price") +
+  scale_y_continuous(labels = scales::comma) +
+  theme_minimal() +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1))
+```
+```{r}
+florida_data <- realtor_data %>%
+  filter(state == "Florida")
+
+average_price_by_city_florida <- florida_data %>%
+  group_by(city) %>%
+  summarise(average_price = mean(price, na.rm = TRUE)) %>%
+  arrange(desc(average_price)) %>%
+  top_n(10)
+
+ggplot(average_price_by_city_florida, aes(x = reorder(city, -average_price), y = average_price)) +
+  geom_col(fill = "skyblue", color = "black") +
+  labs(title = "Avg. House Prices by City in Florida (Top 10)",
+       x = "City",
+       y = "Average Price") +
+  scale_y_continuous(labels = scales::comma) +
+  theme_minimal() +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1))
+
+```
+```{r}
+top_10_cities <- realtor_data %>%
+  group_by(city) %>%
+  summarise(property_count = n()) %>%
+  top_n(10, property_count) %>%
+  select(city)
+
+city_bedroom_avg_price <- realtor_data %>%
+  filter(city %in% top_10_cities$city) %>%
+  group_by(city, bed) %>%
+  summarise(avg_price = mean(price, na.rm = TRUE)) %>%
+  arrange(city, bed)
+
+ggplot(city_bedroom_avg_price, aes(x = city, y = avg_price, fill = factor(bed))) +
+  geom_bar(stat = "identity", position = "dodge") +
+  labs(title = "Avg. Price by City and Number of Bedrooms (Top 10)",
+       x = "City",
+       y = "Average Price",
+       fill = "Number of Bedrooms") +
+  theme_minimal() +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1)) +
+  scale_y_continuous(labels = function(x) format(x, scientific = FALSE))
+```
+
+```{r}
+set.seed(123) 
+train_indices <- sample(1:nrow(realtor_data), 0.8 * nrow(realtor_data))
+train_data <- realtor_data[train_indices, ]
+test_data <- realtor_data[-train_indices, ]
+```
+
+
+```{r}
+lm_model <- lm(price ~ bed + bath + acre_lot + house_size, data = train_data)
+
+summary(lm_model)
+```
+```{r}
+library(lmtest)
+
+
+
+bptest(lm_model)  
+```
+```{r}
+library(caret)
+
+predictions <- predict(lm_model, realtor_data)
+
+predicted_categories <- cut(predictions, breaks = c(-Inf, 100000, 200000, Inf), labels = c("Low", "Medium", "High"))
+
+actual_categories <- cut(realtor_data$price, breaks = c(-Inf, 100000, 200000, Inf), labels = c("Low", "Medium", "High"))
+
+conf_matrix <- confusionMatrix(predicted_categories, actual_categories)
+
+conf_matrix
+
+conf_matrix$overall['Accuracy']
+```
+```{r}
+plot(lm_model)
+```
+```{r}
+# Calculate Mean Squared Error (MSE)
+mse <- mean((predictions - realtor_data$price)^2)
+
+# Calculate Mean Absolute Error (MAE)
+mae <- mean(abs(predictions - realtor_data$price))
+
+# Calculate Root Mean Squared Error (RMSE)
+rmse <- sqrt(mse)
+
+# Print the evaluation scores
+cat("Mean Squared Error (MSE): ", mse, "\n")
+cat("Mean Absolute Error (MAE): ", mae, "\n")
+cat("Root Mean Squared Error (RMSE): ", rmse, "\n")
+
+```
+
+
+
+
